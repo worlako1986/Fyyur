@@ -2,9 +2,10 @@
 # Imports
 #----------------------------------------------------------------------------#
 import json
+from typing import final
 import dateutil.parser
 import babel
-from flask import Flask, render_template, request, Response, flash, redirect, url_for
+from flask import Flask, render_template, request, Response, flash, redirect, url_for, jsonify
 from flask_moment import Moment
 from flask_sqlalchemy import SQLAlchemy
 import logging
@@ -48,7 +49,7 @@ class Venue(db.Model):
     website_link = db.Column(db.String(250))
     seeking_talent = db.Column(db.Boolean, nullable = True, default = False)
     seeking_description = db.Column(db.String(500))
-    shows = db.relationship("Show", backref = 'venue_list', lazy = True)
+    shows = db.relationship("Show", backref = 'venue_list', cascade="all,delete",  lazy = True)
 
     def __repr__(self) -> str:
       return f"Venue: id({self.id}), name({self.name})"
@@ -107,6 +108,23 @@ class Venue(db.Model):
         "num_upcoming_shows": len(upcoming_shows),
       }
 
+    def to_edit_detail(self):
+      return {
+        "id": self.id,
+        "name": self.name,
+        "genres": json.loads(self.genres)['genres'],
+        "address": self.address,
+        "city": self.city,
+        "state": self.state,
+        "phone": self.phone,
+        "website": self.website_link,
+        "facebook_link": self.facebook_link,
+        "seeking_talent": self.seeking_talent,
+        "seeking_description": self.seeking_description,
+        "image_link": self.image_link,
+  }
+    
+
 
 class Artist(db.Model):
     __tablename__ = 'artists'
@@ -124,7 +142,7 @@ class Artist(db.Model):
     website_link = db.Column(db.String(250))
     seeking_venue = db.Column(db.Boolean, nullable = True, default = False)
     seeking_description = db.Column(db.String(500))
-    shows = db.relationship("Show", backref = 'artist_list', lazy = True)
+    shows = db.relationship("Show", backref = 'artist_list', cascade="all,delete", lazy = True)
 
     def __repr__(self) -> str:
       return f"Artist: id({self.id}), name({self.name})"
@@ -241,13 +259,14 @@ def search_venues():
   # TODO: implement search on venues with partial string search. Ensure it is case-insensitive.
   # seach for Hop should return "The Musical Hop".
   # search for "Music" should return "The Musical Hop" and "Park Square Live Music & Coffee"
+
+  # Retrive venues
+  venues = Venue.query.filter(Venue.name.ilike('%'+request.form.get('search_term', '')+'%'))
+  data = [venue.to_detail() for venue in venues]
+
   response={
-    "count": 1,
-    "data": [{
-      "id": 2,
-      "name": "The Dueling Pianos Bar",
-      "num_upcoming_shows": 0,
-    }]
+    "count": len(data),
+    "data": data
   }
   return render_template('pages/search_venues.html', results=response, search_term=request.form.get('search_term', ''))
 
@@ -258,7 +277,7 @@ def show_venue(venue_id):
 
   # Retrive venue
   venue = Venue.query.get(venue_id)
-  
+
   data1={
     "id": 1,
     "name": "The Musical Hop",
@@ -398,7 +417,20 @@ def delete_venue(venue_id):
 
   # BONUS CHALLENGE: Implement a button to delete a Venue on a Venue Page, have it so that
   # clicking that button delete it from the db then redirect the user to the homepage
-  return None
+  try:
+    # Retrive venue
+    venue = Venue.query.get(venue_id)
+    db.session.delete(venue)
+    db.session.commit()
+
+  except Exception as e:
+    print(str(e))
+    db.session.rollback()
+  finally:
+    db.session.close()
+  
+  return jsonify({})
+
 
 #  Artists
 #  ----------------------------------------------------------------
@@ -541,6 +573,9 @@ def edit_artist_submission(artist_id):
 @app.route('/venues/<int:venue_id>/edit', methods=['GET'])
 def edit_venue(venue_id):
   form = VenueForm()
+  # Retrive venue
+  venue_detail = Venue.query.get(venue_id)
+
   venue={
     "id": 1,
     "name": "The Musical Hop",
@@ -556,12 +591,38 @@ def edit_venue(venue_id):
     "image_link": "https://images.unsplash.com/photo-1543900694-133f37abaaa5?ixlib=rb-1.2.1&ixid=eyJhcHBfaWQiOjEyMDd9&auto=format&fit=crop&w=400&q=60"
   }
   # TODO: populate form with values from venue with ID <venue_id>
-  return render_template('forms/edit_venue.html', form=form, venue=venue)
+  return render_template('forms/edit_venue.html', form=form, venue=venue_detail.to_edit_detail())
 
 @app.route('/venues/<int:venue_id>/edit', methods=['POST'])
 def edit_venue_submission(venue_id):
   # TODO: take values from the form submitted, and update existing
   # venue record with ID <venue_id> using the new attributes
+  try:
+    # Retrive venue
+    venue = Venue.query.get(venue_id)
+
+    seeking_talent = request.form.get("seeking_talent", "n")
+    venue.name = request.form.get('name')
+    venue.city = request.form.get('city')
+    venue.state = request.form.get('state')
+    venue.address = request.form.get('address')
+    venue.phone = request.form.get('phone')
+    venue.genres = json.dumps({"genres": request.form.getlist('genres', str)})
+    venue.image_link = request.form.get('image_link', '')
+    venue.facebook_link = request.form.get('facebook_link', '')
+    venue.website_link = request.form.get('website_link', '')
+    venue.seeking_talent = False if seeking_talent == "n" else True
+    venue.seeking_description = request.form.get('seeking_description', '')
+
+    # Update database
+    db.session.commit()
+
+  except Exception as e:
+    print(str(e))
+    db.session.rollback()
+  finally:
+    db.session.close()
+
   return redirect(url_for('show_venue', venue_id=venue_id))
 
 #  Create Artist
