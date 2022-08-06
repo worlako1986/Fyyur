@@ -10,4 +10,4 @@ DEBUG = True
 
 
 # TODO IMPLEMENT DATABASE URL
-SQLALCHEMY_DATABASE_URI = 'postgresql://lite:123456789@localhost:5433/fyyurapp'
+SQLALCHEMY_DATABASE_URI = 'postgresql://worlako:AVNS_N8Bf2y3yVWBRdSTbmag@db-worlako-do-user-12149207-0.b.db.ondigitalocean.com:25060/fyyurapp'
